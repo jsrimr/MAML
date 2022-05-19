@@ -97,7 +97,7 @@ class MAML:
         tf.nest.map_structure(lambda x, y: x.assign(y), phi, theta)  # copy theta to phi
 
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy()
-        # opt_fn = tf.keras.optimizers.SGD(learning_rate=self._inner_lr)
+        opt_fn = tf.keras.optimizers.SGD(learning_rate=self._inner_lr)
         metrics_fn = tf.keras.metrics.SparseCategoricalAccuracy(name='Inner Accuracy')
 
         ############### Your code here ###################
@@ -111,17 +111,16 @@ class MAML:
         x_batch_train, y_batch_train = list(support_data.as_numpy_iterator())[0]
 
         # phi * L
+        tf.nest.map_structure(lambda x, y: x.assign(y), self.model.trainable_weights, phi)
         for _ in range(self._num_inner_steps):
-            tf.nest.map_structure(lambda x, y: x.assign(y), self.model.trainable_weights, theta)  # copy theta to phi
-            # Step 5
+
             with tf.GradientTape() as train_tape:
                 logits = self.model(x_batch_train, training=True)
                 train_loss = loss_fn(y_batch_train, logits)
-            # Step 6
-            grads = train_tape.gradient(train_loss, self.model.trainable_variables)
-            self._optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
-            tf.nest.map_structure(lambda x, y: x.assign(y), phi, self.model.trainable_weights)
 
+            grads = train_tape.gradient(train_loss, self.model.trainable_variables)
+            opt_fn.apply_gradients(zip(grads, self.model.trainable_variables))
+            
             metrics_fn.update_state(y_batch_train, logits)
             accuracies.append(metrics_fn.result())
             metrics_fn.reset_states()
@@ -129,6 +128,7 @@ class MAML:
         logits = self.model(x_batch_train, training=True)
         metrics_fn.update_state(y_batch_train, logits)
         accuracies.append(metrics_fn.result())
+        tf.nest.map_structure(lambda x, y: x.assign(y), phi, self.model.trainable_weights)
 
         #####################################################
         assert phi != None
@@ -188,7 +188,7 @@ class MAML:
                 loss = loss_fn(label, preds)
 
             grads = tape.gradient(loss, self.model.trainable_weights)
-            opt_fn.apply_gradients(zip(grads, self.model.trainable_weights))
+            self._optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
             tf.nest.map_structure(lambda x, y: x.assign(y), theta, self.model.trainable_weights)
             metrics_fn.update_state(label, preds)
             
